@@ -1,0 +1,6 @@
+*.xml
+*.mp4
+*.csv
+*.xlsx
+local/
+.idea/

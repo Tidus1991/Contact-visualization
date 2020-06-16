@@ -1,192 +1,101 @@
 # -*- coding: utf-8 -*-
 """
-Created on 2020/06/07 14:40
+main.py
+
+Created on 2020/6/14 10:31
 
 @author: Tidus
 """
 
-
-from __future__ import division, print_function, absolute_import
-
-import tensorflow as tf
+import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-
-# Import MNIST data
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
 
 
-# Visualize decoder setting
-# Parameters
-learning_rate = 0.01
-training_epochs = 5
-batch_size = 256
-display_step = 1
-examples_to_show = 10
+source = "contact.mp4"
+fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
+out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (540, 480))
 
-# Network Parameters
-n_input = 784  # MNIST data input (img shape: 28*28)
+class kPoint:
+    def __init__(self, initArray):
+        self.pt = (int(initArray[0]), int(initArray[1]))
+        self.bestMatch = [None, np.inf]
+        self.factor = None
 
-# tf Graph input (only pictures)
-X = tf.placeholder("float", [None, n_input])
+    def matchPoint(self, ptArray, map_index):
+        distanceFromMap = np.linalg.norm([self.pt[0]-ptArray[0], self.pt[1]-ptArray[1]])
+        if distanceFromMap < self.bestMatch[-1]:
+            self.bestMatch = [map_index, distanceFromMap]
+            self.factor = np.exp(abs(distanceFromMap))/2
 
-# hidden layer settings
-n_hidden_1 = 256 # 1st layer num features
-n_hidden_2 = 128 # 2nd layer num features
-weights = {
-    'encoder_h1': tf.Variable(tf.random_normal([n_input, n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
-    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_input])),
-}
-biases = {
-    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b2': tf.Variable(tf.random_normal([n_input])),
-}
+    def validityCheck(self,preFrame):
+        minDistanceFromPreMap = np.inf
+        for preKeyPoint in preFrame:
+            tempDistance = np.linalg.norm([self.pt[0] - preKeyPoint[0], self.pt[1] - preKeyPoint[1]])
+            if tempDistance < minDistanceFromPreMap:
+                minDistanceFromPreMap  = tempDistance
+        return minDistanceFromPreMap < 10 and self.bestMatch[-1] > 2.5 and self.bestMatch[-1] < 15
 
-# Building the encoder
-def encoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
-                                   biases['encoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
-                                   biases['encoder_b2']))
-    return layer_2
+    def linearExpression(self, ptArray):
+        theta = np.arctan2(ptArray[1]-self.pt[1], ptArray[0]-self.pt[0])
+        endpt_x = int(ptArray[0] - self.factor * np.cos(theta))
+        endpt_y = int(ptArray[1] - self.factor * np.sin(theta))
+        return (endpt_x, endpt_y)
 
 
-# Building the decoder
-def decoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder_h1']),
-                                   biases['decoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
-                                   biases['decoder_b2']))
-    return layer_2
+if __name__ == "__main__":
+    frameIndex = 0
+    kPointMap = np.empty((0, 2))
+    preFrameMap = np.empty((0, 2))
+
+    cap = cv2.VideoCapture(source)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
+    params = cv2.SimpleBlobDetector_Params()
+
+    params.filterByConvexity = True
+    params.minConvexity = 0.1
+
+    params.filterByArea = True
+    params.minArea = 30
+
+    detector = cv2.SimpleBlobDetector_create(params)
+
+    while cap.isOpened():
+        _, rawFrame = cap.read()
+        if rawFrame is None:
+            break
+        frameIndex+=1
+        resizeFrame = cv2.resize(rawFrame,(640, 480))[:, 60:600]
+        grayFrame = cv2.cvtColor(resizeFrame, cv2.COLOR_BGR2GRAY)
+
+        binImg = cv2.adaptiveThreshold(grayFrame,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,15, 15)
+        opening = cv2.morphologyEx(binImg, cv2.MORPH_OPEN, kernel)
+        keyPonits = detector.detect(opening)
+        im_with_keypoints = cv2.drawKeypoints(resizeFrame, keyPonits, np.array([]), (0, 0, 255),
+                                              cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
 
-"""
-
-# Visualize encoder setting
-# Parameters
-learning_rate = 0.01    # 0.01 this learning rate will be better! Tested
-training_epochs = 10
-batch_size = 256
-display_step = 1
-
-# Network Parameters
-n_input = 784  # MNIST data input (img shape: 28*28)
-
-# tf Graph input (only pictures)
-X = tf.placeholder("float", [None, n_input])
-
-# hidden layer settings
-n_hidden_1 = 128
-n_hidden_2 = 64
-n_hidden_3 = 10
-n_hidden_4 = 2
-
-weights = {
-    'encoder_h1': tf.Variable(tf.truncated_normal([n_input, n_hidden_1],)),
-    'encoder_h2': tf.Variable(tf.truncated_normal([n_hidden_1, n_hidden_2],)),
-    'encoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_3],)),
-    'encoder_h4': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_4],)),
-
-    'decoder_h1': tf.Variable(tf.truncated_normal([n_hidden_4, n_hidden_3],)),
-    'decoder_h2': tf.Variable(tf.truncated_normal([n_hidden_3, n_hidden_2],)),
-    'decoder_h3': tf.Variable(tf.truncated_normal([n_hidden_2, n_hidden_1],)),
-    'decoder_h4': tf.Variable(tf.truncated_normal([n_hidden_1, n_input],)),
-}
-biases = {
-    'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'encoder_b3': tf.Variable(tf.random_normal([n_hidden_3])),
-    'encoder_b4': tf.Variable(tf.random_normal([n_hidden_4])),
-
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_3])),
-    'decoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b3': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b4': tf.Variable(tf.random_normal([n_input])),
-}
+        if frameIndex == 30:
+            for keyPoint in keyPonits:
+                kPointMap = np.append(kPointMap, [[keyPoint.pt[0], keyPoint.pt[1]]], axis=0)
+                preFrameMap = kPointMap
+        if kPointMap.any():
+            for keyPoint in keyPonits:
+                currentPoint = kPoint(keyPoint.pt)
+                for map_index in range(len(kPointMap)):
+                    currentPoint.matchPoint(kPointMap[map_index], map_index)
+                if currentPoint.validityCheck(preFrameMap):
+                    linearDistance = currentPoint.linearExpression(kPointMap[currentPoint.bestMatch[0]])
+                    cv2.arrowedLine(im_with_keypoints, tuple(kPointMap[currentPoint.bestMatch[0]].astype(np.int32)), linearDistance, (255, 255, 255), 1, cv2.LINE_AA, tipLength=0.3)
+                    print("Draw a arrowedLine")
 
 
-def encoder(x):
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
-                                   biases['encoder_b1']))
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
-                                   biases['encoder_b2']))
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights['encoder_h3']),
-                                   biases['encoder_b3']))
-    layer_4 = tf.add(tf.matmul(layer_3, weights['encoder_h4']),
-                                    biases['encoder_b4'])
-    return layer_4
+            preFrameMap = np.empty((0, 2))
+            for keyPoint in keyPonits:
+                preFrameMap = np.append(preFrameMap, [keyPoint.pt], axis=0)
+        out.write(im_with_keypoints)
+        cv2.imshow("rawFrame", im_with_keypoints)
+        print("frame:", frameIndex)
 
-
-def decoder(x):
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder_h1']),
-                                   biases['decoder_b1']))
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
-                                   biases['decoder_b2']))
-    layer_3 = tf.nn.sigmoid(tf.add(tf.matmul(layer_2, weights['decoder_h3']),
-                                biases['decoder_b3']))
-    layer_4 = tf.nn.sigmoid(tf.add(tf.matmul(layer_3, weights['decoder_h4']),
-                                biases['decoder_b4']))
-    return layer_4
-"""
-
-# Construct model
-encoder_op = encoder(X)
-decoder_op = decoder(encoder_op)
-
-# Prediction
-y_pred = decoder_op
-# Targets (Labels) are the input data.
-y_true = X
-
-# Define loss and optimizer, minimize the squared error
-cost = tf.reduce_mean(tf.pow(y_true - y_pred, 2))
-optimizer = tf.train.AdamOptimizer(learning_rate).minimize(cost)
-
-
-# Launch the graph
-with tf.Session() as sess:
-    # tf.initialize_all_variables() no long valid from
-    # 2017-03-02 if using tensorflow >= 0.12
-    if int((tf.__version__).split('.')[1]) < 12 and int((tf.__version__).split('.')[0]) < 1:
-        init = tf.initialize_all_variables()
-    else:
-        init = tf.global_variables_initializer()
-    sess.run(init)
-    total_batch = int(mnist.train.num_examples/batch_size)
-    # Training cycle
-    for epoch in range(training_epochs):
-        # Loop over all batches
-        for i in range(total_batch):
-            batch_xs, batch_ys = mnist.train.next_batch(batch_size)  # max(x) = 1, min(x) = 0
-            # Run optimization op (backprop) and cost op (to get loss value)
-            _, c = sess.run([optimizer, cost], feed_dict={X: batch_xs})
-        # Display logs per epoch step
-        if epoch % display_step == 0:
-            print("Epoch:", '%04d' % (epoch+1),
-                  "cost=", "{:.9f}".format(c))
-
-    print("Optimization Finished!")
-
-    # # Applying encode and decode over test set
-    encode_decode = sess.run(
-        y_pred, feed_dict={X: mnist.test.images[:examples_to_show]})
-    # Compare original images with their reconstructions
-    f, a = plt.subplots(2, 10, figsize=(10, 2))
-    for i in range(examples_to_show):
-        a[0][i].imshow(np.reshape(mnist.test.images[i], (28, 28)))
-        a[1][i].imshow(np.reshape(encode_decode[i], (28, 28)))
-    plt.show()
-
-    # encoder_result = sess.run(encoder_op, feed_dict={X: mnist.test.images})
-    # plt.scatter(encoder_result[:, 0], encoder_result[:, 1], c=mnist.test.labels)
-    # plt.colorbar()
-    # plt.show()
+        k = cv2.waitKey(20) & 0xff
+        if k == 27:
+            break
