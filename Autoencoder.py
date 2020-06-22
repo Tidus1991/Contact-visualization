@@ -25,15 +25,15 @@ batch_size = 256
 display_step = 1
 examples_to_show = 10
 
-# Network Parameters
-n_input = 784  # MNIST data input (img shape: 28*28)
 
-# tf Graph input (only pictures)
+n_input = 784
+
+
 X = tf.placeholder("float", [None, n_input])
 
-# hidden layer settings
-n_hidden_1 = 256 # 1st layer num features
-n_hidden_2 = 128 # 2nd layer num features
+
+n_hidden_1 = 256
+n_hidden_2 = 128
 weights = {
     'encoder_h1': tf.Variable(tf.random_normal([n_input, n_hidden_1])),
     'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
@@ -47,7 +47,8 @@ biases = {
     'decoder_b2': tf.Variable(tf.random_normal([n_input])),
 }
 
-# Building the encoder
+
+
 def encoder(x):
     # Encoder Hidden layer with sigmoid activation #1
     layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
